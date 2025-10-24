@@ -1,0 +1,25 @@
+.interview-setup-page {
+  display: flex;
+  flex-direction: column;
+  min-height: 100vh;
+  background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+}
+
+.page-content {
+  flex: 1;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 24px;
+}
+
+/* 响应式设计 */
+@media (max-width: 768px) {
+  .interview-setup-page {
+    background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+  }
+  
+  .page-content {
+    padding: 16px;
+  }
+}

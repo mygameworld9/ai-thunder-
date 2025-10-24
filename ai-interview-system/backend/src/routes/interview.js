@@ -1,22 +1,23 @@
 const fp = require('fastify-plugin');
+const interviewController = require('../controllers/interviewController');
 
 async function interviewRoutes(fastify, options) {
   // 阶段0: 开始面试
-  fastify.post('/start', async (request, reply) => {
-    // TODO: 实现面试开始逻辑
-    return { message: '开始面试功能待实现' };
+  fastify.post('/start', {
+    preHandler: [fastify.optionalAuth],
+    handler: interviewController.startInterview
   });
 
   // 阶段1: 配置面试
-  fastify.post('/configure', async (request, reply) => {
-    // TODO: 实现面试配置逻辑
-    return { message: '配置面试功能待实现' };
+  fastify.post('/configure', {
+    preHandler: [fastify.optionalAuth],
+    handler: interviewController.configureInterview
   });
 
   // 阶段2: 开始会话
-  fastify.post('/start_session', async (request, reply) => {
-    // TODO: 实现开始会话逻辑
-    return { message: '开始会话功能待实现' };
+  fastify.post('/start_session', {
+    preHandler: [fastify.optionalAuth],
+    handler: interviewController.startSession
   });
 
   // 阶段3: 提交答案
