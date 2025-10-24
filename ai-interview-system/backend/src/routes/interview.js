@@ -20,6 +20,12 @@ async function interviewRoutes(fastify, options) {
     handler: interviewController.startSession
   });
 
+  // 获取会话信息
+  fastify.get('/session/:session_id', {
+    preHandler: [fastify.optionalAuth],
+    handler: interviewController.getSessionInfo
+  });
+
   // 阶段3: 提交答案
   fastify.post('/submit_answer', async (request, reply) => {
     // TODO: 实现提交答案逻辑
