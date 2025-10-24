@@ -1,0 +1,11 @@
+.interview-report-page {
+  min-height: 100vh;
+  background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+}
+
+/* 响应式设计 */
+@media (max-width: 768px) {
+  .interview-report-page {
+    background: white;
+  }
+}

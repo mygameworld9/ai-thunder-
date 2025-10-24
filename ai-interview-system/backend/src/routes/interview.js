@@ -38,22 +38,16 @@ async function interviewRoutes(fastify, options) {
     handler: interviewController.getSessionMessages
   });
 
-  // 阶段3: 提交答案
-  fastify.post('/submit_answer', async (request, reply) => {
-    // TODO: 实现提交答案逻辑
-    return { message: '提交答案功能待实现' };
-  });
-
   // 阶段4: 获取报告
-  fastify.get('/report', async (request, reply) => {
-    // TODO: 实现获取报告逻辑
-    return { message: '获取报告功能待实现' };
+  fastify.get('/report', {
+    preHandler: [fastify.optionalAuth],
+    handler: interviewController.getReport
   });
 
-  // SSE 实时通信端点
-  fastify.get('/sse', async (request, reply) => {
-    // TODO: 实现 SSE 逻辑
-    return { message: 'SSE 功能待实现' };
+  // 阶段3: 提交答案
+  fastify.post('/submit_answer', {
+    preHandler: [fastify.optionalAuth],
+    handler: interviewController.submitAnswer
   });
 }
 

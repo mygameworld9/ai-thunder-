@@ -616,8 +616,236 @@ class InterviewController {
         status: 'COMPLETED',
         completed_at: new Date().toISOString()
       })
+
+      // 触发报告生成
+      await this.generateReport(session_id)
+
     } catch (error) {
       console.error('完成面试失败:', error)
+    }
+  }
+
+  /**
+   * 生成面试报告
+   */
+  async generateReport(session_id) {
+    try {
+      // 获取会话信息和消息历史
+      const sessionQuery = `
+        SELECT 
+          s.target_position, s.job_description, s.company_context_summary,
+          s.provider, s.model, s.difficulty, s.total_questions,
+          s.resume_content
+        FROM interview_sessions s
+        WHERE s.session_id = $1
+      `
+      const sessionResult = await query(sessionQuery, [session_id])
+
+      if (sessionResult.rows.length === 0) {
+        throw new Error('会话不存在')
+      }
+
+      const session = sessionResult.rows[0]
+
+      // 获取面试消息历史
+      const messagesQuery = `
+        SELECT role, content, question_index, created_at
+        FROM interview_messages
+        WHERE session_id = $1
+        ORDER BY created_at ASC
+      `
+      const messagesResult = await query(messagesQuery, [session_id])
+
+      const messages = messagesResult.rows
+
+      // 构建报告生成的上下文
+      const context = this.buildReportContext(session, messages)
+      
+      // TODO: 从数据库获取 P-FINAL-REPORT Prompt
+      const prompt = this.buildReportPrompt(session, messages)
+      
+      // 调用 LLM 生成报告
+      const response = await llmGateway.generateResponse(session_id, prompt, context)
+      
+      // 保存生成的报告
+      await this.saveReport(session_id, response.response)
+
+    } catch (error) {
+      console.error('生成报告失败:', error)
+      // 记录错误但不阻止面试完成
+    }
+  }
+
+  /**
+   * 构建报告生成的上下文
+   */
+  buildReportContext(session, messages) {
+    const context = []
+    
+    // 添加面试基本信息
+    context.push({
+      role: 'system',
+      content: `你是一个专业的面试评估专家，正在为${session.difficulty}级别的${session.target_position}岗位面试生成评估报告。`
+    })
+
+    // 添加职位描述
+    if (session.job_description) {
+      context.push({
+        role: 'system',
+        content: `职位描述: ${session.job_description}`
+      })
+    }
+
+    // 添加公司背景
+    if (session.company_context_summary) {
+      context.push({
+        role: 'system',
+        content: `公司背景: ${session.company_context_summary}`
+      })
+    }
+
+    // 添加面试消息历史
+    messages.forEach(msg => {
+      context.push({
+        role: msg.role === 'user' ? 'user' : 'assistant',
+        content: msg.content
+      })
+    })
+
+    return context
+  }
+
+  /**
+   * 构建报告生成的 Prompt
+   */
+  buildReportPrompt(session, messages) {
+    const basePrompt = `你是一个专业的面试评估专家，正在为${session.difficulty}级别的${session.target_position}岗位面试生成评估报告。`
+
+    let prompt = basePrompt
+
+    // 添加职位描述信息
+    if (session.job_description) {
+      prompt += `\n\n职位描述: ${session.job_description}`
+    }
+
+    // 添加公司背景信息
+    if (session.company_context_summary) {
+      prompt += `\n\n公司背景: ${session.company_context_summary}`
+    }
+
+    prompt += `\n\n面试消息历史:`
+    messages.forEach((msg, index) => {
+      prompt += `\n${msg.role === 'user' ? '候选人' : '面试官'}: ${msg.content}`
+    })
+
+    prompt += `\n\n请生成一个结构化的JSON格式面试报告，包含以下字段：`
+    prompt += `\n- overall_score: 总体评分 (0-10分)`
+    prompt += `\n- overall_feedback: 总体反馈描述`
+    prompt += `\n- skill_scores: 技能评分数组，每个元素包含 skill(技能名称)、score(评分0-10)、feedback(反馈)`
+    prompt += `\n- question_analysis: 问题分析数组，每个元素包含 question(问题)、score(评分0-10)、user_answer(用户回答)、feedback(评估反馈)、suggestions(改进建议)`
+    prompt += `\n- improvement_suggestions: 改进建议数组`
+
+    prompt += `\n\n请确保评分客观公正，反馈具体有针对性，建议实用可行。`
+
+    return prompt
+  }
+
+  /**
+   * 保存报告
+   */
+  async saveReport(session_id, reportContent) {
+    try {
+      // 解析JSON报告
+      let reportData
+      try {
+        reportData = JSON.parse(reportContent)
+      } catch (error) {
+        console.error('报告JSON解析失败:', error)
+        // 如果JSON解析失败，保存原始文本
+        reportData = {
+          overall_score: 5,
+          overall_feedback: '报告生成中...',
+          skill_scores: [],
+          question_analysis: [],
+          improvement_suggestions: ['报告正在生成中，请稍后查看']
+        }
+      }
+
+      // 保存报告到数据库
+      const queryText = `
+        INSERT INTO interview_reports 
+        (session_id, report_data, generated_at)
+        VALUES ($1, $2, NOW())
+        ON CONFLICT (session_id) 
+        DO UPDATE SET 
+          report_data = $2, 
+          generated_at = NOW()
+      `
+      await query(queryText, [session_id, JSON.stringify(reportData)])
+
+    } catch (error) {
+      console.error('保存报告失败:', error)
+    }
+  }
+
+  /**
+   * 获取面试报告
+   */
+  async getReport(request, reply) {
+    try {
+      const { session_id } = request.query
+
+      if (!session_id) {
+        return reply.status(400).send({
+          error: 'MISSING_SESSION_ID',
+          message: '会话ID是必需的'
+        })
+      }
+
+      // 检查会话是否存在
+      const sessionQuery = `
+        SELECT session_id FROM interview_sessions 
+        WHERE session_id = $1
+      `
+      const sessionResult = await query(sessionQuery, [session_id])
+
+      if (sessionResult.rows.length === 0) {
+        return reply.status(404).send({
+          error: 'SESSION_NOT_FOUND',
+          message: '会话不存在'
+        })
+      }
+
+      // 获取报告
+      const reportQuery = `
+        SELECT report_data, generated_at
+        FROM interview_reports 
+        WHERE session_id = $1
+      `
+      const reportResult = await query(reportQuery, [session_id])
+
+      if (reportResult.rows.length === 0) {
+        // 报告还在生成中
+        return reply.status(404).send({
+          error: 'REPORT_NOT_READY',
+          message: '报告正在生成中，请稍后重试'
+        })
+      }
+
+      const report = reportResult.rows[0]
+
+      return {
+        session_id,
+        report: report.report_data,
+        generated_at: report.generated_at
+      }
+
+    } catch (error) {
+      console.error('获取报告失败:', error)
+      return reply.status(500).send({
+        error: 'INTERNAL_SERVER_ERROR',
+        message: '获取报告失败'
+      })
     }
   }
 
