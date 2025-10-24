@@ -200,7 +200,7 @@ class LLMGateway {
   }
 
   /**
-   * 调用 LLM 生成响应
+   * 调用 LLM 生成响应（带重试机制）
    */
   async generateResponse(session_id, prompt, context = []) {
     try {
@@ -213,13 +213,15 @@ class LLMGateway {
       const { provider, model } = session
       const providerInfo = this.getProviderClient(provider, model)
 
-      // 调用对应适配器
-      const response = await providerInfo.adapter(
-        providerInfo.client,
-        providerInfo.model,
-        prompt,
-        context
-      )
+      // 使用重试机制调用适配器
+      const response = await this.retryWithBackoff(async () => {
+        return await providerInfo.adapter(
+          providerInfo.client,
+          providerInfo.model,
+          prompt,
+          context
+        )
+      })
 
       return {
         provider,
@@ -230,7 +232,27 @@ class LLMGateway {
 
     } catch (error) {
       console.error('LLM 调用失败:', error)
+      
+      // 记录错误日志
+      await this.logError(session_id, provider, error.message)
+      
       throw error
+    }
+  }
+
+  /**
+   * 记录错误日志
+   */
+  async logError(session_id, provider, errorMessage) {
+    try {
+      const queryText = `
+        INSERT INTO system_logs 
+        (session_id, provider, error_message, log_level, created_at)
+        VALUES ($1, $2, $3, 'ERROR', NOW())
+      `
+      await query(queryText, [session_id, provider, errorMessage])
+    } catch (error) {
+      console.error('记录错误日志失败:', error)
     }
   }
 
