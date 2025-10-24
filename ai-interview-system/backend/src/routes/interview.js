@@ -27,6 +27,18 @@ async function interviewRoutes(fastify, options) {
   });
 
   // 阶段3: 提交答案
+  fastify.post('/submit_answer', {
+    preHandler: [fastify.optionalAuth],
+    handler: interviewController.submitAnswer
+  });
+
+  // 获取会话消息
+  fastify.get('/:session_id/messages', {
+    preHandler: [fastify.optionalAuth],
+    handler: interviewController.getSessionMessages
+  });
+
+  // 阶段3: 提交答案
   fastify.post('/submit_answer', async (request, reply) => {
     // TODO: 实现提交答案逻辑
     return { message: '提交答案功能待实现' };

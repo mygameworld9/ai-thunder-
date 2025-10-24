@@ -5,6 +5,7 @@ const fs = require('fs').promises
 const { companyCache, sessionCache } = require('../config/redis')
 const companyResearchService = require('../services/companyResearchService')
 const sessionService = require('../services/sessionService')
+const llmGateway = require('../services/llmGateway')
 const FileUtils = require('../utils/fileUtils')
 
 class InterviewController {
@@ -356,6 +357,329 @@ class InterviewController {
     } catch (error) {
       // 如果不是JSON格式，直接返回原始文本
       return companyContextSummary
+    }
+  }
+
+  /**
+   * 提交答案并生成下一个问题
+   */
+  async submitAnswer(request, reply) {
+    try {
+      const { session_id, answer } = request.body
+
+      if (!session_id) {
+        return reply.status(400).send({
+          error: 'MISSING_SESSION_ID',
+          message: '会话ID是必需的'
+        })
+      }
+
+      if (!answer || !answer.trim()) {
+        return reply.status(400).send({
+          error: 'MISSING_ANSWER',
+          message: '答案是必需的'
+        })
+      }
+
+      // 获取会话信息
+      const sessionQuery = `
+        SELECT provider, model, difficulty, target_position, job_description,
+               company_context_summary, current_question_index, total_questions
+        FROM interview_sessions 
+        WHERE session_id = $1
+      `
+      const sessionResult = await query(sessionQuery, [session_id])
+
+      if (sessionResult.rows.length === 0) {
+        return reply.status(404).send({
+          error: 'SESSION_NOT_FOUND',
+          message: '会话不存在'
+        })
+      }
+
+      const session = sessionResult.rows[0]
+      const currentQuestionIndex = session.current_question_index || 0
+      const totalQuestions = session.total_questions || 10
+
+      // 保存用户答案
+      const answerQuery = `
+        INSERT INTO interview_messages 
+        (session_id, role, content, question_index)
+        VALUES ($1, 'user', $2, $3)
+        RETURNING message_id
+      `
+      const answerResult = await query(answerQuery, [
+        session_id,
+        answer.trim(),
+        currentQuestionIndex
+      ])
+
+      // 检查是否达到问题数量上限
+      if (currentQuestionIndex >= totalQuestions) {
+        // 更新会话状态为完成
+        await this.completeInterview(session_id)
+        
+        return {
+          question: null,
+          is_complete: true,
+          current_question_index: currentQuestionIndex,
+          total_questions: totalQuestions,
+          message: '面试已完成'
+        }
+      }
+
+      // 生成下一个问题
+      const nextQuestion = await this.generateNextQuestion(session, currentQuestionIndex + 1, answer.trim())
+      
+      // 保存AI问题
+      if (nextQuestion) {
+        const questionQuery = `
+          INSERT INTO interview_messages 
+          (session_id, role, content, question_index)
+          VALUES ($1, 'assistant', $2, $3)
+        `
+        await query(questionQuery, [
+          session_id,
+          nextQuestion,
+          currentQuestionIndex + 1
+        ])
+
+        // 更新会话的当前问题索引
+        await this.updateQuestionIndex(session_id, currentQuestionIndex + 1)
+      }
+
+      return {
+        question: nextQuestion,
+        is_complete: currentQuestionIndex + 1 >= totalQuestions,
+        current_question_index: currentQuestionIndex + 1,
+        total_questions: totalQuestions,
+        message: '答案提交成功'
+      }
+
+    } catch (error) {
+      console.error('提交答案失败:', error)
+      return reply.status(500).send({
+        error: 'INTERNAL_SERVER_ERROR',
+        message: '提交答案失败'
+      })
+    }
+  }
+
+  /**
+   * 生成下一个问题
+   */
+  async generateNextQuestion(session, questionIndex, previousAnswer) {
+    try {
+      const { provider, model, difficulty, target_position, job_description, company_context_summary } = session
+
+      // 构建问题生成的上下文
+      const context = this.buildQuestionContext(session, questionIndex, previousAnswer)
+      
+      // TODO: 从数据库获取 P-QUESTION-GENERATE Prompt
+      const prompt = this.buildQuestionPrompt(session, questionIndex)
+      
+      // 调用 LLM 生成问题
+      const response = await llmGateway.generateResponse(session.session_id, prompt, context)
+      
+      return response.response
+
+    } catch (error) {
+      console.error('生成问题失败:', error)
+      // 返回默认问题
+      return this.getDefaultQuestion(questionIndex)
+    }
+  }
+
+  /**
+   * 构建问题生成的上下文
+   */
+  buildQuestionContext(session, questionIndex, previousAnswer) {
+    const context = []
+    
+    // 添加面试基本信息
+    context.push({
+      role: 'system',
+      content: `你是一个专业的面试官，正在对候选人进行${session.difficulty}级别的${session.target_position}岗位面试。`
+    })
+
+    // 添加职位描述
+    if (session.job_description) {
+      context.push({
+        role: 'system',
+        content: `职位描述: ${session.job_description}`
+      })
+    }
+
+    // 添加公司背景
+    if (session.company_context_summary) {
+      context.push({
+        role: 'system',
+        content: `公司背景: ${session.company_context_summary}`
+      })
+    }
+
+    // 添加之前的回答（如果是后续问题）
+    if (questionIndex > 1 && previousAnswer) {
+      context.push({
+        role: 'user',
+        content: previousAnswer
+      })
+    }
+
+    return context
+  }
+
+  /**
+   * 构建问题生成的 Prompt
+   */
+  buildQuestionPrompt(session, questionIndex) {
+    const basePrompt = `你是一个专业的面试官，正在对候选人进行${session.difficulty}级别的${session.target_position}岗位面试。`
+
+    let prompt = basePrompt
+
+    // 添加职位描述信息
+    if (session.job_description) {
+      prompt += `\n\n职位描述: ${session.job_description}`
+    }
+
+    // 添加公司背景信息
+    if (session.company_context_summary) {
+      prompt += `\n\n公司背景: ${session.company_context_summary}`
+    }
+
+    // 根据问题索引生成不同类型的问题
+    if (questionIndex === 1) {
+      prompt += `\n\n这是第一个问题，请从基础的技术问题开始，考察候选人的基本技能和经验。`
+    } else if (questionIndex <= 3) {
+      prompt += `\n\n这是第${questionIndex}个问题，请继续深入考察候选人的技术能力和项目经验。`
+    } else if (questionIndex <= 7) {
+      prompt += `\n\n这是第${questionIndex}个问题，请开始考察候选人的系统设计能力和解决问题的思路。`
+    } else {
+      prompt += `\n\n这是第${questionIndex}个问题，请考察候选人的高级技术能力和领导力。`
+    }
+
+    prompt += `\n\n请生成一个具体的技术面试问题，要求问题清晰、有针对性，并且与目标岗位相关。`
+
+    return prompt
+  }
+
+  /**
+   * 获取默认问题（当LLM调用失败时）
+   */
+  getDefaultQuestion(questionIndex) {
+    const defaultQuestions = [
+      "请介绍一下你自己和你的技术背景。",
+      "你为什么选择这个技术方向？",
+      "请描述一个你最近参与的项目。",
+      "你在项目中遇到的最大挑战是什么？",
+      "你是如何解决技术难题的？",
+      "请谈谈你对新技术的学习能力。",
+      "你如何进行代码审查和质量保证？",
+      "请描述你的团队合作经验。",
+      "你如何处理项目中的冲突？",
+      "你对未来的职业发展有什么规划？"
+    ]
+
+    return defaultQuestions[questionIndex - 1] || "请继续回答下一个问题。"
+  }
+
+  /**
+   * 更新问题索引
+   */
+  async updateQuestionIndex(session_id, questionIndex) {
+    try {
+      const queryText = `
+        UPDATE interview_sessions 
+        SET current_question_index = $1, updated_at = NOW()
+        WHERE session_id = $2
+      `
+      await query(queryText, [questionIndex, session_id])
+    } catch (error) {
+      console.error('更新问题索引失败:', error)
+    }
+  }
+
+  /**
+   * 完成面试
+   */
+  async completeInterview(session_id) {
+    try {
+      const queryText = `
+        UPDATE interview_sessions 
+        SET status = 'COMPLETED', completed_at = NOW()
+        WHERE session_id = $1
+      `
+      await query(queryText, [session_id])
+
+      // 更新缓存
+      await sessionCache.updateSessionState(session_id, {
+        status: 'COMPLETED',
+        completed_at: new Date().toISOString()
+      })
+    } catch (error) {
+      console.error('完成面试失败:', error)
+    }
+  }
+
+  /**
+   * 获取会话消息
+   */
+  async getSessionMessages(request, reply) {
+    try {
+      const { session_id } = request.params
+
+      if (!session_id) {
+        return reply.status(400).send({
+          error: 'MISSING_SESSION_ID',
+          message: '会话ID是必需的'
+        })
+      }
+
+      // 检查会话是否存在
+      const sessionQuery = `
+        SELECT session_id FROM interview_sessions 
+        WHERE session_id = $1
+      `
+      const sessionResult = await query(sessionQuery, [session_id])
+
+      if (sessionResult.rows.length === 0) {
+        return reply.status(404).send({
+          error: 'SESSION_NOT_FOUND',
+          message: '会话不存在'
+        })
+      }
+
+      // 获取会话消息
+      const messagesQuery = `
+        SELECT 
+          message_id,
+          role,
+          content,
+          question_index,
+          created_at
+        FROM interview_messages 
+        WHERE session_id = $1 
+        ORDER BY created_at ASC
+      `
+      const messagesResult = await query(messagesQuery, [session_id])
+
+      return {
+        session_id,
+        messages: messagesResult.rows.map(msg => ({
+          id: msg.message_id,
+          role: msg.role,
+          content: msg.content,
+          question_index: msg.question_index,
+          timestamp: msg.created_at
+        }))
+      }
+
+    } catch (error) {
+      console.error('获取消息失败:', error)
+      return reply.status(500).send({
+        error: 'INTERNAL_SERVER_ERROR',
+        message: '获取消息失败'
+      })
     }
   }
 
