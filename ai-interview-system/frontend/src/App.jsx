@@ -17,8 +17,8 @@ function App() {
           <Route path="/login" element={<LoginPage />} />
           <Route path="/register" element={<RegisterPage />} />
           <Route path="/dashboard" element={<DashboardPage />} />
-          <Route path="/interview/:sessionId" element={<InterviewPage />} />
-          <Route path="/report/:sessionId" element={<ReportPage />} />
+          <Route path="/interview/:sessionId" element={<InterviewChatPage />} />
+          <Route path="/report/:sessionId" element={<InterviewReportPage />} />
         </Routes>
       </div>
     </AuthProvider>

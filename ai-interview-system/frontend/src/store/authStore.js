@@ -107,10 +107,10 @@ const useAuthStore = create(
 export const AuthProvider = ({ children }) => {
   // 在组件挂载时验证token
   React.useEffect(() => {
-    get().verifyToken()
+    useAuthStore.getState().verifyToken()
   }, [])
 
   return children
 }
 
-export default useAuthStore
+export { useAuthStore }
