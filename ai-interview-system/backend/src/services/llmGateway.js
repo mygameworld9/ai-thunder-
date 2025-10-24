@@ -10,10 +10,12 @@ class LLMGateway {
   constructor() {
     this.googleApiKey = process.env.GOOGLE_API_KEY
     this.openaiApiKey = process.env.OPENAI_API_KEY
+    this.openaiBaseUrl = process.env.OPENAI_BASE_URL // 用于自定义URL/中转站
+    this.defaultOpenaiModel = process.env.OPENAI_DEFAULT_MODEL || 'gpt-4o' // 默认模型
     this.ollamaBaseUrl = process.env.OLLAMA_BASE_URL || 'http://localhost:11434'
     
     this.googleClient = this.googleApiKey ? this.initializeGoogleClient() : null
-    this.openaiClient = this.openaiApiKey ? new OpenAI({ apiKey: this.openaiApiKey }) : null
+    this.openaiClient = this.openaiApiKey ? this.initializeOpenAIClient() : null
     this.ollamaClient = createOllama({ host: this.ollamaBaseUrl })
   }
 
@@ -27,6 +29,25 @@ class LLMGateway {
       })
     } catch (error) {
       console.error('初始化 Google 客户端失败:', error)
+      return null
+    }
+  }
+
+  /**
+   * 初始化 OpenAI 客户端
+   */
+  initializeOpenAIClient() {
+    try {
+      const config = { apiKey: this.openaiApiKey }
+      
+      // 如果配置了自定义URL，则使用它
+      if (this.openaiBaseUrl) {
+        config.baseURL = this.openaiBaseUrl
+      }
+      
+      return new OpenAI(config)
+    } catch (error) {
+      console.error('初始化 OpenAI 客户端失败:', error)
       return null
     }
   }

@@ -42,7 +42,7 @@ async function startServer() {
   try {
     await registerPlugins();
     
-    const port = process.env.PORT || 3001;
+    const port = process.env.PORT || 3002;
     await fastify.listen({ port, host: '0.0.0.0' });
     console.log(`服务器启动成功，端口: ${port}`);
   } catch (error) {

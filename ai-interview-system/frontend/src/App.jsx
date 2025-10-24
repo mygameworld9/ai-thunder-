@@ -1,5 +1,6 @@
 import { Routes, Route } from 'react-router-dom'
 import { AuthProvider } from './store/authStore'
+import Navbar from './components/Navbar'
 import InterviewSetupPage from './pages/InterviewSetupPage'
 import InterviewChatPage from './pages/InterviewChatPage'
 import InterviewReportPage from './pages/InterviewReportPage'
@@ -12,6 +13,7 @@ function App() {
   return (
     <AuthProvider>
       <div className="App">
+        <Navbar />
         <Routes>
           <Route path="/" element={<InterviewSetupPage />} />
           <Route path="/login" element={<LoginPage />} />
