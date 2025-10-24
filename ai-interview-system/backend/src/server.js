@@ -7,16 +7,16 @@ dotenv.config();
 // 注册插件
 async function registerPlugins() {
   try {
-    await fastify.register(require('fastify-cors'), {
+    await fastify.register(require('@fastify/cors'), {
       origin: process.env.FRONTEND_URL || 'http://localhost:3000',
       credentials: true
     });
 
-    await fastify.register(require('fastify-jwt'), {
+    await fastify.register(require('@fastify/jwt'), {
       secret: process.env.JWT_SECRET || 'ai-interview-secret-key'
     });
 
-    await fastify.register(require('fastify-multipart'), {
+    await fastify.register(require('@fastify/multipart'), {
       limits: {
         fileSize: 10 * 1024 * 1024, // 10MB
         files: 1
