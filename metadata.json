@@ -1,4 +1,5 @@
 {
-  "name": "AI Mock Interview Coach",
-  "description": "An application that uses the Gemini API to conduct mock interviews. It provides users with relevant questions and AI-powered feedback to help them practice and improve their interviewing skills."
+  "requestFramePermissions": [],
+  "name": "",
+  "description": ""
 }
