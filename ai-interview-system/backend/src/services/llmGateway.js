@@ -1,7 +1,7 @@
 const { query } = require('../config/database')
-const { google } = require('googleapis')
+const GoogleAI = require('@google-ai/generativelanguage')
 const OpenAI = require('openai')
-const { createOllama } = require('ollama')
+const ollama = require('ollama')
 
 /**
  * LLM 网关服务 - 统一管理不同AI服务提供商
@@ -16,7 +16,7 @@ class LLMGateway {
     
     this.googleClient = this.googleApiKey ? this.initializeGoogleClient() : null
     this.openaiClient = this.openaiApiKey ? this.initializeOpenAIClient() : null
-    this.ollamaClient = createOllama({ host: this.ollamaBaseUrl })
+    this.ollamaClient = ollama
   }
 
   /**
@@ -24,7 +24,7 @@ class LLMGateway {
    */
   initializeGoogleClient() {
     try {
-      return google.generativeai({
+      return GoogleAI({
         apiKey: this.googleApiKey
       })
     } catch (error) {
@@ -94,8 +94,6 @@ class LLMGateway {
    */
   async googleAdapter(client, model, prompt, context = []) {
     try {
-      const genAI = client.getGenerativeModel({ model })
-      
       // 构建消息历史
       const messages = []
       if (context && context.length > 0) {
@@ -113,7 +111,8 @@ class LLMGateway {
         parts: [{ text: prompt }]
       })
 
-      const result = await genAI.generateContent({
+      const result = await client.generateContent({
+        model: model,
         contents: messages,
         generationConfig: {
           temperature: 0.7,

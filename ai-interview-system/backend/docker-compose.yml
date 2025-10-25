@@ -20,11 +20,13 @@ services:
       timeout: 10s
       retries: 3
       start_period: 30s
+    networks:
+      - ai-interview-network
 
-  # Redis缓存服务
+  # Redis缓存服务 (匹配您已创建的容器)
   redis:
-    image: redis:7-alpine
-    container_name: ai-interview-redis
+    image: redis:latest
+    container_name: redis-test  # 使用您已创建的容器名
     ports:
       - "6379:6379"
     volumes:
@@ -36,6 +38,8 @@ services:
       timeout: 10s
       retries: 3
       start_period: 30s
+    networks:
+      - ai-interview-network
 
   # 可选：添加pgAdmin用于数据库管理
   pgadmin:
@@ -49,9 +53,42 @@ services:
     depends_on:
       - postgres
     restart: unless-stopped
+    networks:
+      - ai-interview-network
+
+  # 后端应用服务
+  backend:
+    build: .
+    container_name: ai-interview-backend
+    ports:
+      - "3002:3002"
+    environment:
+      - NODE_ENV=development
+      - DB_HOST=postgres
+      - DB_PORT=5432
+      - DB_NAME=ai_interview
+      - DB_USER=postgres
+      - DB_PASSWORD=PASSWORD
+      - REDIS_HOST=redis
+      - REDIS_PORT=6379
+    depends_on:
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+    restart: unless-stopped
+    networks:
+      - ai-interview-network
+    volumes:
+      - .:/app
+      - /app/node_modules
 
 volumes:
   postgres_data:
     driver: local
   redis_data:
     driver: local
+
+networks:
+  ai-interview-network:
+    driver: bridge
