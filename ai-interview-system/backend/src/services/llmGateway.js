@@ -264,16 +264,48 @@ class LLMGateway {
   /**
    * 记录错误日志
    */
-  async logError(session_id, provider, errorMessage) {
+  async logError(session_id, provider, errorMessage, errorCode = null, retryCount = 0) {
     try {
       const queryText = `
         INSERT INTO system_logs 
-        (session_id, provider, error_message, log_level, created_at)
-        VALUES ($1, $2, $3, 'ERROR', NOW())
+        (session_id, provider, message, error_code, retry_count, level, created_at)
+        VALUES ($1, $2, $3, $4, $5, 'ERROR', NOW())
       `
-      await query(queryText, [session_id, provider, errorMessage])
+      await query(queryText, [session_id, provider, errorMessage, errorCode, retryCount])
     } catch (error) {
       console.error('记录错误日志失败:', error)
+    }
+  }
+
+  /**
+   * 记录信息日志
+   */
+  async logInfo(session_id, provider, message) {
+    try {
+      const queryText = `
+        INSERT INTO system_logs 
+        (session_id, provider, message, level, created_at)
+        VALUES ($1, $2, $3, 'INFO', NOW())
+      `
+      await query(queryText, [session_id, provider, message])
+    } catch (error) {
+      console.error('记录信息日志失败:', error)
+    }
+  }
+
+  /**
+   * 记录警告日志
+   */
+  async logWarning(session_id, provider, message, errorCode = null) {
+    try {
+      const queryText = `
+        INSERT INTO system_logs 
+        (session_id, provider, message, error_code, level, created_at)
+        VALUES ($1, $2, $3, $4, 'WARN', NOW())
+      `
+      await query(queryText, [session_id, provider, message, errorCode])
+    } catch (error) {
+      console.error('记录警告日志失败:', error)
     }
   }
 

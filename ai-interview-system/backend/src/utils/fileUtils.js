@@ -1,6 +1,8 @@
 const fs = require('fs').promises
 const path = require('path')
 const { v4: uuidv4 } = require('uuid')
+const pdfParse = require('pdf-parse')
+const Tesseract = require('tesseract.js')
 
 /**
  * 文件处理工具类
@@ -104,19 +106,60 @@ class FileUtils {
   }
 
   /**
-   * 从PDF提取文本（占位符实现）
+   * 从PDF提取文本（使用pdf-parse库）
    */
   static async extractTextFromPDF(buffer) {
-    // TODO: 集成真正的PDF文本提取库
-    return '[PDF文件已上传，内容提取功能待实现]'
+    try {
+      const data = await pdfParse(buffer)
+      return data.text.trim() || '[PDF文件中未找到可提取的文本内容]'
+    } catch (error) {
+      console.error('PDF文本提取失败:', error)
+      throw new Error(`PDF文本提取失败: ${error.message}`)
+    }
   }
 
   /**
-   * 从图片提取文本（占位符实现）
+   * 从图片提取文本（使用Tesseract.js）
    */
   static async extractTextFromImage(buffer, mimeType) {
-    // TODO: 集成OCR服务（如Tesseract.js或云OCR服务）
-    return '[图片文件已上传，OCR文本提取功能待实现]'
+    try {
+      // 创建临时文件供Tesseract.js使用
+      const tempDir = './temp_ocr'
+      await fs.mkdir(tempDir, { recursive: true })
+      
+      const tempFileName = `${uuidv4()}.png`
+      const tempFilePath = path.join(tempDir, tempFileName)
+      
+      // 保存临时文件
+      await fs.writeFile(tempFilePath, buffer)
+      
+      // 使用Tesseract.js进行OCR
+      const result = await Tesseract.recognize(
+        tempFilePath,
+        'eng', // 英文识别
+        { logger: m => console.log(m) } // 可选：显示处理进度
+      )
+      
+      // 清理临时文件
+      await fs.unlink(tempFilePath)
+      
+      return result.data.text.trim() || '[图片中未找到可识别的文本内容]'
+    } catch (error) {
+      console.error('图片OCR提取失败:', error)
+      
+      // 清理可能的临时文件
+      try {
+        const tempDir = './temp_ocr'
+        const files = await fs.readdir(tempDir)
+        for (const file of files) {
+          await fs.unlink(path.join(tempDir, file))
+        }
+      } catch (cleanupError) {
+        // 忽略清理错误
+      }
+      
+      throw new Error(`图片OCR提取失败: ${error.message}`)
+    }
   }
 
   /**
