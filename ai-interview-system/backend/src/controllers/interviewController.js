@@ -35,7 +35,8 @@ class InterviewController {
 
         // 保存文件并提取内容
         const savedFile = await FileUtils.saveUploadedFile(file)
-        resume_content = await this.extractResumeContent(file, await fs.readFile(file.filepath))
+        const fileBuffer = await fs.readFile(file.filepath)
+        resume_content = await FileUtils.extractFileContent(file, fileBuffer)
         file_url = savedFile.fileUrl
         mime_type = savedFile.mimeType
       }
