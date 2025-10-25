@@ -1,4 +1,4 @@
-const jwt = require('fastify-jwt');
+const jwt = require('@fastify/jwt');
 
 // JWT 认证中间件
 async function authenticate(request, reply) {

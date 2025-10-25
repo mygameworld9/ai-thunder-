@@ -3,24 +3,13 @@ const dotenv = require('dotenv');
 
 dotenv.config();
 
-// 创建 Redis 客户端
+// 创建 Redis 客户端 - 使用新版本API
 const redisClient = Redis.createClient({
-  host: process.env.REDIS_HOST || 'localhost',
-  port: process.env.REDIS_PORT || 6379,
+  socket: {
+    host: process.env.REDIS_HOST || 'localhost',
+    port: process.env.REDIS_PORT || 6379,
+  },
   password: process.env.REDIS_PASSWORD || undefined,
-  retry_strategy: (options) => {
-    if (options.error && options.error.code === 'ECONNREFUSED') {
-      return new Error('Redis 服务器拒绝连接');
-    }
-    if (options.total_retry_time > 1000 * 60 * 60) {
-      return new Error('Redis 重试时间已超过1小时');
-    }
-    if (options.attempt > 10) {
-      return undefined;
-    }
-    // 指数退避重试
-    return Math.min(options.attempt * 100, 3000);
-  }
 });
 
 // 连接事件处理
@@ -34,11 +23,100 @@ redisClient.on('ready', () => {
 
 redisClient.on('error', (err) => {
   console.error('❌ Redis 客户端连接错误:', err.message);
+  // 如果Redis连接失败，记录错误但不阻止系统运行
+  console.log('⚠️  Redis连接失败，系统将以无缓存模式运行');
 });
 
 redisClient.on('end', () => {
   console.log('Redis 客户端连接已结束');
 });
+
+// 如果Redis连接失败，使用内存缓存作为备选方案
+let memoryCache = new Map();
+
+// 简化的内存缓存实现
+const memoryCacheOperations = {
+  async set(key, value, ttl = 3600) {
+    const expiry = Date.now() + (ttl * 1000);
+    memoryCache.set(key, { value, expiry });
+    return true;
+  },
+
+  async get(key) {
+    const item = memoryCache.get(key);
+    if (!item) return null;
+    
+    if (Date.now() > item.expiry) {
+      memoryCache.delete(key);
+      return null;
+    }
+    
+    return item.value;
+  },
+
+  async del(key) {
+    memoryCache.delete(key);
+    return true;
+  },
+
+  async exists(key) {
+    const item = memoryCache.get(key);
+    if (!item) return false;
+    
+    if (Date.now() > item.expiry) {
+      memoryCache.delete(key);
+      return false;
+    }
+    
+    return true;
+  },
+
+  async expire(key, ttl) {
+    const item = memoryCache.get(key);
+    if (item) {
+      const expiry = Date.now() + (ttl * 1000);
+      memoryCache.set(key, { value: item.value, expiry });
+      return true;
+    }
+    return false;
+  }
+};
+
+// 简化的公司缓存实现
+const memoryCompanyCache = {
+  async cacheCompanyInfo(companyName, data) {
+    const key = `company:${companyName.toLowerCase()}`;
+    return await memoryCacheOperations.set(key, data, 24 * 3600);
+  },
+
+  async getCompanyInfo(companyName) {
+    const key = `company:${companyName.toLowerCase()}`;
+    return await memoryCacheOperations.get(key);
+  },
+
+  async deleteCompanyInfo(companyName) {
+    const key = `company:${companyName.toLowerCase()}`;
+    return await memoryCacheOperations.del(key);
+  }
+};
+
+// 简化的会话缓存实现
+const memorySessionCache = {
+  async cacheSessionState(sessionId, state) {
+    const key = `session:${sessionId}`;
+    return await memoryCacheOperations.set(key, state, 7200);
+  },
+
+  async getSessionState(sessionId) {
+    const key = `session:${sessionId}`;
+    return await memoryCacheOperations.get(key);
+  },
+
+  async deleteSession(sessionId) {
+    const key = `session:${sessionId}`;
+    return await memoryCacheOperations.del(key);
+  }
+};
 
 // 测试 Redis 连接
 async function testConnection() {
@@ -201,11 +279,27 @@ const sessionCache = {
   }
 };
 
+// 动态选择缓存实现
+async function getCacheImplementation() {
+  try {
+    await redisClient.connect();
+    console.log('✅ 使用 Redis 缓存');
+    return { companyCache, sessionCache };
+  } catch (error) {
+    console.log('⚠️  Redis 连接失败，使用内存缓存');
+    return { companyCache: memoryCompanyCache, sessionCache: memorySessionCache };
+  }
+}
+
 module.exports = {
   redisClient,
   testConnection,
   disconnect,
   redisOperations,
   companyCache,
-  sessionCache
+  sessionCache,
+  getCacheImplementation,
+  // 暴露内存缓存实现用于测试
+  memoryCompanyCache,
+  memorySessionCache
 };

@@ -30,6 +30,8 @@
     "fastify-jwt": "^4.2.0",
     "fastify-multipart": "^5.4.0",
     "googleapis": "^130.0.0",
+    "node-fetch": "^3.3.2",
+    "ollama": "^0.6.0",
     "openai": "^4.26.1",
     "pdf-parse": "^2.4.5",
     "pg": "^8.11.3",

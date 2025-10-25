@@ -47,23 +47,17 @@ async function routes(fastify, options) {
     }
   });
 
-  // 导入其他路由模块
-  try {
-    // 用户认证路由
-    await fastify.register(require('./auth'), { prefix: '/api/v1/auth' });
-    
-    // 面试相关路由
-    await fastify.register(require('./interview'), { prefix: '/api/v1/interview' });
-    
-    // 用户管理路由
-    await fastify.register(require('./user'), { prefix: '/api/v1/user' });
-    
-    // 管理员路由
-    await fastify.register(require('./admin'), { prefix: '/api/v1/admin' });
-    
-  } catch (error) {
-    fastify.log.error('路由注册失败:', error);
-  }
+  // 用户认证路由
+  await fastify.register(require('./auth'), { prefix: '/api/v1/auth' });
+  
+  // 面试相关路由
+  await fastify.register(require('./interview'), { prefix: '/api/v1/interview' });
+  
+  // 用户管理路由
+  await fastify.register(require('./user'), { prefix: '/api/v1/user' });
+  
+  // 管理员路由
+  await fastify.register(require('./admin'), { prefix: '/api/v1/admin' });
 }
 
 module.exports = fp(routes, {
