@@ -1,5 +1,5 @@
 {
-  "requestFramePermissions": [],
-  "name": "",
-  "description": ""
+  "name": "AI Interview Simulator",
+  "description": "An application that simulates a job interview. Provide a job title, responsibilities, requirements, and your resume to start a one-on-one conversation with an AI interviewer.",
+  "requestFramePermissions": []
 }
